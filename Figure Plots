@@ -9,7 +9,7 @@ library(tidyverse)
 library(ggplot2)
 
 # Load a CSV file named "my_data.csv" from the current working directory
-my_data <- read.csv("3_C_Book3.csv", header = TRUE, sep = ",")
+my_data <- read.csv("1F.csv", header = TRUE, sep = ",")
 
 #sort by vial ID (date) used for Fig S3A and S3B
 ggplot(my_data, aes(x = factor(vial, levels = sort(unique(vial))), y = red)) +
