@@ -1,0 +1,95 @@
+rm(list = ls())
+
+library(geepack)
+
+run_gee <- function(file, treatment_levels = c("CI", "UU"), corstr = "exchangeable") {
+  df <- read.csv(file, stringsAsFactors = FALSE)
+  
+  # basic cleaning
+  df$date <- factor(trimws(df$date))
+  df$treatment <- factor(trimws(df$treatment), levels = treatment_levels)
+  df$eggs <- as.numeric(df$eggs)
+  df$adults <- as.numeric(df$adults)
+  
+  # remove blank / incomplete rows
+  df <- df[!is.na(df$date) & !is.na(df$treatment) & !is.na(df$eggs) & !is.na(df$adults), ]
+  
+  fit <- geeglm(
+    cbind(adults, eggs - adults) ~ treatment,
+    id = date,
+    data = df,
+    family = binomial,
+    corstr = corstr
+  )
+  
+  coef_name <- rownames(coef(summary(fit)))[2]
+  
+  beta <- coef(fit)[coef_name]
+  se <- sqrt(diag(vcov(fit)))[coef_name]
+  p <- coef(summary(fit))[coef_name, "Pr(>|W|)"]
+  
+  OR <- exp(beta)
+  lower <- exp(beta - 1.96 * se)
+  upper <- exp(beta + 1.96 * se)
+  
+  cat("\n============================\n")
+  cat("File:", file, "\n")
+  cat("Correlation structure:", corstr, "\n")
+  cat("Rows:", nrow(df), "\n")
+  cat("Days:", length(unique(df$date)), "\n")
+  cat("Treatment counts:\n")
+  print(table(df$treatment))
+  cat("\nResults:\n")
+  cat(
+    "Beta =", round(beta, 3), "\n",
+    "SE =", round(se, 3), "\n",
+    "OR =", round(OR, 3), "\n",
+    "95% CI = [", round(lower, 3), ", ", round(upper, 3), "]\n",
+    "p =", signif(p, 3), "\n",
+    sep = ""
+  )
+  
+  invisible(list(
+    file = file,
+    fit = fit,
+    beta = beta,
+    se = se,
+    OR = OR,
+    lower = lower,
+    upper = upper,
+    p = p,
+    n = nrow(df),
+    days = length(unique(df$date)),
+    counts = table(df$treatment)
+  ))
+}
+
+#run for each csv
+yw_res <- run_gee("yw.csv", treatment_levels = c("CI", "UU"))
+w1118_res <- run_gee("w1118.csv", treatment_levels = c("CI", "UU"))
+UBW_res <- run_gee("UBW.csv", treatment_levels = c("CI", "UU"))
+
+#final output
+collect_results <- function(res, label) {
+  data.frame(
+    dataset = label,
+    beta = round(res$beta, 3),
+    SE = round(res$se, 3),
+    OR = round(res$OR, 3),
+    CI_lower = round(res$lower, 3),
+    CI_upper = round(res$upper, 3),
+    p = signif(res$p, 3),
+    rows = res$n,
+    days = res$days
+  )
+}
+
+summary_table <- rbind(
+  collect_results(yw_res, "yw"),
+  collect_results(w1118_res, "w1118"),
+  collect_results(UBW_res, "UBW")
+  # add more here if needed
+)
+
+summary_table
+
