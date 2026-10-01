@@ -1,1 +1,335 @@
+=============================================================================
+# Hill et al. PEV manuscript — Updated statistical analysis
+# 
+# Beta GLMM: mgcv::gam(family=betar()) with cluster random effects
+# Mann-Whitney: for cross-experiment comparisons / missing cluster data
+# Binomial GEE: for Table 2 egg-adult viability (see separate R script)
+# BH correction: applied within each figure
+#
+# Requires: R >= 4.0, tidyverse, mgcv
+# 
+# October 1, 2026
+# =============================================================================
+
+library(tidyverse)
+library(mgcv)
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+sv_transform <- function(y) {
+  # Smithson & Verkuilen (2006, Psychological Methods) squeeze for beta regression.
+  # Maps [0,1] to open interval (0,1).
+  n <- length(y)
+  (y * (n - 1) + 0.5) / n
+}
+
+run_beta_glmm <- function(dat, grp_col, val_col, cluster_col, grp1, grp2, label) {
+  # Beta GLMM: red ~ treatment + s(cluster, bs="re"), family = betar()
+  # grp1 is the "higher" group (typically CI or infected)
+  
+  sub <- dat |>
+    filter(.data[[grp_col]] %in% c(grp1, grp2),
+           !is.na(.data[[val_col]]),
+           !is.na(.data[[cluster_col]]),
+           .data[[cluster_col]] != "") |>
+    mutate(
+      treatment = factor(if_else(.data[[grp_col]] == grp1, 1L, 0L)),
+      cluster = factor(.data[[cluster_col]]),
+      y_raw = .data[[val_col]],
+      y = sv_transform(y_raw)
+    )
+  
+  stats <- sub |>
+    group_by(treatment) |>
+    summarise(n = n(), mean = mean(y_raw), ncl = n_distinct(cluster), .groups = "drop")
+  
+  n1 <- stats$n[stats$treatment == 1]
+  n2 <- stats$n[stats$treatment == 0]
+  mean1 <- stats$mean[stats$treatment == 1]
+  mean2 <- stats$mean[stats$treatment == 0]
+  ncl1 <- stats$ncl[stats$treatment == 1]
+  ncl2 <- stats$ncl[stats$treatment == 0]
+  
+  mw <- wilcox.test(sub$y_raw[sub$treatment == 1], sub$y_raw[sub$treatment == 0])
+  
+  result <- tryCatch({
+    m <- gam(y ~ treatment + s(cluster, bs = "re"), family = betar(), data = sub)
+    s <- summary(m)
+    coef <- s$p.table["treatment1", "Estimate"]
+    se <- s$p.table["treatment1", "Std. Error"]
+    p <- s$p.table["treatment1", "Pr(>|z|)"]
+    re_sd <- gam.vcomp(m)[1, "std.dev"]
+    list(coef = coef, se = se, p = p, re_sd = re_sd, status = "OK")
+  }, error = function(e) {
+    list(coef = NA_real_, se = NA_real_, p = NA_real_, re_sd = NA_real_,
+         status = str_c("FAILED: ", e$message))
+  })
+  
+  tibble(
+    label = label, grp1 = grp1, grp2 = grp2,
+    n1 = n1, n2 = n2, ncl1 = ncl1, ncl2 = ncl2,
+    mean1 = round(mean1, 4), mean2 = round(mean2, 4),
+    diff = round(mean1 - mean2, 4),
+    mw_p = mw$p.value,
+    glmm_coef = result$coef, glmm_se = result$se, glmm_p = result$p,
+    re_sd = result$re_sd,
+    method = "beta_GLMM", status = result$status
+  )
+}
+
+run_mw <- function(dat, grp_col, val_col, grp1, grp2, label, reason) {
+  sub <- dat |>
+    filter(.data[[grp_col]] %in% c(grp1, grp2), !is.na(.data[[val_col]]))
+  
+  v1 <- sub |> filter(.data[[grp_col]] == grp1) |> pull(.data[[val_col]])
+  v2 <- sub |> filter(.data[[grp_col]] == grp2) |> pull(.data[[val_col]])
+  
+  mw <- wilcox.test(v1, v2)
+  
+  tibble(
+    label = label, grp1 = grp1, grp2 = grp2,
+    n1 = length(v1), n2 = length(v2), ncl1 = NA_integer_, ncl2 = NA_integer_,
+    mean1 = round(mean(v1), 4), mean2 = round(mean(v2), 4),
+    diff = round(mean(v1) - mean(v2), 4),
+    mw_p = mw$p.value,
+    glmm_coef = NA_real_, glmm_se = NA_real_, glmm_p = NA_real_, re_sd = NA_real_,
+    method = "MW", status = reason
+  )
+}
+
+format_p <- function(p) {
+  case_when(
+    is.na(p) ~ "—",
+    p < 0.001 ~ sprintf("%.2e", p),
+    TRUE ~ sprintf("%.4f", p)
+  )
+}
+
+
+# =============================================================================
+# LOAD DATA, note I edited figure names by panel so I didn't get confused...
+# =============================================================================
+
+d1f <- read_csv("1F.csv", show_col_types = FALSE) |>
+  rename_with(str_trim) |>
+  mutate(across(where(is.character), str_trim))
+
+d3c <- read_csv("3C.csv", show_col_types = FALSE) |>
+  rename_with(str_trim)
+
+d3d <- read_csv("3D.csv", show_col_types = FALSE) |>
+  rename_with(str_trim)
+
+d2d <- read_csv("2D.csv", show_col_types = FALSE) |>
+  rename_with(str_trim) |>
+  mutate(across(where(is.character), str_trim))
+
+d4a <- read_csv("4A.csv", show_col_types = FALSE) |>
+  rename_with(str_trim) |>
+  mutate(across(where(is.character), str_trim)) |>
+  mutate(name = if_else(name == "U Fathers", "U fathers", name))
+
+d4b <- read_csv("4B.csv", show_col_types = FALSE) |>
+  rename_with(str_trim) |>
+  mutate(across(where(is.character), str_trim))
+
+
+# =============================================================================
+# FIG 3C/3D: yw UU vs CI — vial as random effect
+# =============================================================================
+
+cat("\n================================================================\n")
+cat("FIG 3C/3D\n")
+cat("================================================================\n")
+
+combined_3 <- bind_rows(
+  d3c |> transmute(group = "CI", red, cluster = str_c("CI_", vial)),
+  d3d |> transmute(group = "UU", red, cluster = str_c("UU_", name))
+)
+
+fig3 <- run_beta_glmm(combined_3, "group", "red", "cluster", "CI", "UU",
+                       "3C/3D: yw CI vs UU")
+
+# Correlation on vial means
+ci_vial <- d3c |>
+  group_by(vial) |>
+  summarise(red = mean(red), EAV = mean(EAV), .groups = "drop")
+cor_ci <- cor.test(ci_vial$red, ci_vial$EAV, method = "pearson")
+
+uu_vial <- d3d |>
+  group_by(name) |>
+  summarise(red = mean(red), EAV = mean(EAV), .groups = "drop")
+cor_uu <- cor.test(uu_vial$red, uu_vial$EAV, method = "pearson")
+
+cat(sprintf("  Correlation (CI vial means): r = %.3f, p = %.4f\n", cor_ci$estimate, cor_ci$p.value))
+cat(sprintf("  Correlation (UU vial means): r = %.3f, p = %.4f\n", cor_uu$estimate, cor_uu$p.value))
+
+
+# =============================================================================
+# FIG 2D: Post-introgression — date as random effect
+# =============================================================================
+
+cat("\n================================================================\n")
+cat("FIG 2D\n")
+cat("================================================================\n")
+
+fig2d <- bind_rows(
+  run_beta_glmm(d2d, "name", "red", "date",
+    "I fathers", "U fathers", "2D: I fathers vs U fathers"),
+  run_beta_glmm(d2d, "name", "red", "date",
+    "CI_C1dx", "UxU_c1dx", "2D: C(1)DX CI vs UU"),
+  run_mw(d2d, "name", "red",
+    "CI_XO", "UxU_XO", "2D: X/O CI vs UU", "n=11+6, too few for GLMM"),
+  run_beta_glmm(d2d, "name", "red", "date",
+    "CI_w1118", "UxU_w1118", "2D: w1118 CI vs UU")
+) |>
+  mutate(
+    best_p = coalesce(glmm_p, mw_p),
+    bh_p = p.adjust(best_p, method = "BH")
+  )
+
+cat("\n  BH-corrected p-values (Fig 2D):\n")
+fig2d |>
+  select(label, best_p, bh_p) |>
+  pwalk(~ cat(sprintf("    %s: raw = %s, BH = %s\n", ..1, format_p(..2), format_p(..3))))
+
+
+# =============================================================================
+# FIG 4A: yw stepwise chain
+# =============================================================================
+
+cat("\n================================================================\n")
+cat("FIG 4A\n")
+cat("================================================================\n")
+
+fig4a <- bind_rows(
+  run_beta_glmm(d4a, "name", "red", "Date",
+    "I fathers", "U fathers", "4A: I fathers vs U fathers"),
+  run_mw(d4a, "name", "red",
+    "UU", "U fathers", "4A: UU vs U fathers",
+    "cross-experiment: fathers Sep-Oct 2025, UU Jan 2026 vials"),
+  run_beta_glmm(combined_3, "group", "red", "cluster",
+    "CI", "UU", "4A: CI vs UU (=3C/3D)"),
+  run_mw(d4a, "name", "red",
+    "IU", "CI", "4A: IU vs CI",
+    "cross-experiment: CI Jan 2026 vials, IU Sep-Oct 2025 dates"),
+  run_beta_glmm(d4a, "name", "red", "Date",
+    "II", "IU", "4A: II vs IU")
+) |>
+  mutate(
+    best_p = coalesce(glmm_p, mw_p),
+    bh_p = p.adjust(best_p, method = "BH")
+  )
+
+cat("\n  BH-corrected p-values (Fig 4A):\n")
+fig4a |>
+  select(label, best_p, bh_p) |>
+  pwalk(~ cat(sprintf("    %s: raw = %s, BH = %s\n", ..1, format_p(..2), format_p(..3))))
+
+
+# =============================================================================
+# FIG 4B: In(1)w^m4 mothers
+# =============================================================================
+
+cat("\n================================================================\n")
+cat("FIG 4B\n")
+cat("================================================================\n")
+
+fig4b <- bind_rows(
+  run_mw(d4b, "name", "red",
+    "I fathers", "U fathers", "4B: I fathers vs U fathers",
+    "no clustering data for U fathers"),
+  run_mw(d4b, "name", "red",
+    "I mothers", "U mothers", "4B: I mothers vs U mothers",
+    "no clustering data for either group"),
+  run_beta_glmm(d4b, "name", "red", "date",
+    "CI", "UU", "4B: CI vs UU"),
+  run_mw(d4b, "name", "red",
+    "CI", "II", "4B: CI vs II",
+    "date blocks confounded with treatment (CI spans Aug+Jan, II Aug-Sep only)"),
+  run_mw(d4b, "name", "red",
+    "II", "UU", "4B: II vs UU",
+    "cross-experiment: UU Jan 2026, II Aug-Sep 2025")
+) |>
+  mutate(
+    best_p = coalesce(glmm_p, mw_p),
+    bh_p = p.adjust(best_p, method = "BH")
+  )
+
+cat("\n  BH-corrected p-values (Fig 4B):\n")
+fig4b |>
+  select(label, best_p, bh_p) |>
+  pwalk(~ cat(sprintf("    %s: raw = %s, BH = %s\n", ..1, format_p(..2), format_p(..3))))
+
+# =============================================================================
+# FIG 1F: Pre-introgression — date as random effect
+# =============================================================================
+
+cat("\n================================================================\n")
+cat("FIG 1F\n")
+cat("================================================================\n")
+
+fig1f <- bind_rows(
+  run_mw(d1f, "name", "red",
+                "I fathers", "U fathers", "1F: I fathers vs U fathers", 
+         "no clustering data for either group"),
+  run_beta_glmm(d1f, "name", "red", "date",
+                "CI XY", "U XY", "1F: C(1)DX CI vs UU"),
+  run_mw(d1f, "name", "red",
+         "CI XO", "U XO", "1F: X/O CI vs UU","n=13+8, too few for GLMM"),
+  run_beta_glmm(d1f, "name", "red", "date",
+                "CI_w1118", "U_w1118", "1F: w1118 CI vs UU")
+) |>
+  mutate(
+    best_p = coalesce(glmm_p, mw_p),
+    bh_p = p.adjust(best_p, method = "BH")
+  )
+
+cat("\n  BH-corrected p-values (Fig 1F):\n")
+fig1f |>
+  select(label, best_p, bh_p) |>
+  pwalk(~ cat(sprintf("    %s: raw = %s, BH = %s\n", ..1, format_p(..2), format_p(..3))))
+
+
+# =============================================================================
+# TABLE 2: CI strength — Binomial GEE - See separate script
+# =============================================================================
+
+# =============================================================================
+# FINAL SUMMARY TABLE
+# =============================================================================
+
+cat("\n\n================================================================\n")
+cat("FINAL SUMMARY\n")
+cat("================================================================\n\n")
+
+fig3_out <- fig3 |>
+  mutate(best_p = coalesce(glmm_p, mw_p), bh_p = NA_real_)
+
+all_results <- bind_rows(
+  fig3_out |> mutate(fig = "3C/3D"),
+  fig2d |> mutate(fig = "2D"),
+  fig4a |> mutate(fig = "4A"),
+  fig4b |> mutate(fig = "4B")
+)
+
+cat(sprintf("%-8s %-35s %-10s %-10s %-10s %-12s %-12s %-12s\n",
+  "Fig", "Comparison", "n", "clusters", "method", "raw_p", "BH_p", "MW_p"))
+cat(str_dup("-", 110), "\n")
+
+all_results |>
+  rowwise() |>
+  mutate(
+    n_str = str_c(n1, "+", n2),
+    cl_str = if_else(is.na(ncl1), "—", str_c(ncl1, "+", ncl2)),
+    raw_str = format_p(best_p),
+    bh_str = if_else(is.na(bh_p), "—", format_p(bh_p)),
+    mw_str = format_p(mw_p)
+  ) |>
+  ungroup() |>
+  select(fig, label, n_str, cl_str, method, raw_str, bh_str, mw_str) |>
+  pwalk(~ cat(sprintf("%-8s %-35s %-10s %-10s %-10s %-12s %-12s %-12s\n",
+    ..1, ..2, ..3, ..4, ..5, ..6, ..7, ..8)))
 
