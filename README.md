@@ -54,7 +54,7 @@ All six files are loaded when the complete script is run. The CI-versus-UU compa
 
 ### Visualization: `plots.R`
 
-Change the filename in `read.csv("3_C_Book3.csv", ...)` to the dataset you want to plot, then run the appropriate plotting section.
+Change the filename in `read.csv("1F.csv", ...)` to the dataset you want to plot, then run the appropriate plotting section.
 
 | Plot | Required columns | Figure references in the script |
 | --- | --- | --- |
