@@ -1,4 +1,4 @@
-# The easiest way to get ggplot2 is to install the whole tidyverse:
+#install the whole tidyverse:
 install.packages("tidyverse")
 
 # Alternatively, install just ggplot2:
@@ -11,28 +11,22 @@ library(ggplot2)
 # Load a CSV file named "my_data.csv" from the current working directory
 my_data <- read.csv("3_C_Book3.csv", header = TRUE, sep = ",")
 
-# Create the box plot
-ggplot(data = my_data, aes(x = name, y = red)) +
-  geom_boxplot()
-
-#ordered vials based on order in spreadsheet (not numerical)
-ggplot(my_data, aes(x = factor(vial, levels = unique(vial)), y = red)) +
-  geom_boxplot()
-
-#sort by vial ID (date)
+#sort by vial ID (date) used for Fig S3A and S3B
 ggplot(my_data, aes(x = factor(vial, levels = sort(unique(vial))), y = red)) +
   geom_boxplot(outlier.shape = NA) +
   geom_jitter(width = 0.15, alpha = 0.3, size = 0.8) +
   coord_cartesian(ylim = c(0, 1)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.25))
 
-#jittered based on order in spreadsheet, 
+#jittered box plot based on order in spreadsheet, 
 #outliershape=NA prevents outliers from being plotted twice
+#used for Figs 1F, 2C, 2D, 4A, 4B, S6E
 ggplot(my_data, aes(x = factor(name, levels = unique(name)), y = red)) +
   geom_boxplot(outlier.shape = NA) +
   geom_jitter(width = 0.15, alpha = 0.3, size = 0.8)
 
 #jittered CI strength 
+#used for Figs 3C and 3D
 ggplot(my_data, aes(x = reorder(factor(name), EAV), y = red)) +
   geom_boxplot(outlier.shape = NA) +
   geom_jitter(width = 0.15, alpha = 0.3, size = 0.8)
@@ -44,7 +38,7 @@ ggplot(my_data, aes(x = reorder(factor(name), EAV), y = red)) +
   coord_cartesian(ylim = c(0, 1)) +
   scale_y_continuous(breaks = seq(0, 1, by = 0.25))
 
-#Pearsons R
+#Pearsons R, used for figs S3C and S3D
 ggplot(my_data, aes(x = EAV, y = red)) +
   geom_point() +
   geom_smooth(method = "lm", se = TRUE) +
@@ -55,154 +49,5 @@ ggplot(my_data, aes(x = EAV, y = red)) +
        x = "EAV",
        y = "Red")
 
-#KW test
-kruskal.test(red ~ name, data = my_data)
-
-install.packages("rstatix")
-library(rstatix)
-library(dplyr)
-#I run lines 65-145 all at once after defining groups in 65-69
-# make sure name is a factor
-my_data$name <- factor(my_data$name)
-
-# inspect groups and counts
-print(table(my_data$name))
-print(levels(my_data$name))
-
-# Define your 5 planned comparisons (replace with exact names)
-pairs <- list(
-  c("U fathers", "I fathers"),
-  c("CI_C1dx", "UxU_c1dx"),
-  c("CI_XO", "UxU_XO"),
-  c("CI_w1118", "UxU_w1118"),
-  c("IxU _yw", "IxI_yw")
-)
-
-# helper to run a safe wilcox test and compute approximate r
-run_safe_wilcox <- function(data, grp_pair, yvar = "red", gvar = "name") {
-  # subset
-  sub <- subset(data, data[[gvar]] %in% grp_pair)
-  
-  # drop NA in yvar
-  sub <- sub[!is.na(sub[[yvar]]), ]
-  
-  # check how many distinct groups in this subset
-  levs <- unique(as.character(sub[[gvar]]))
-  # trim whitespace in case of stray spaces
-  levs <- trimws(levs)
-  levs <- levs[levs != ""]
-  
-  if(length(levs) != 2) {
-    return(data.frame(
-      group1 = grp_pair[1],
-      group2 = grp_pair[2],
-      status = paste0("SKIPPED: found ", length(levs), " group(s): ", paste(levs, collapse = ", ")),
-      W = NA, p_value = NA, n1 = NA, n2 = NA, N = NA, r = NA,
-      stringsAsFactors = FALSE
-    ))
-  }
-  
-  # ensure factor levels are exactly the two groups (preserve order)
-  sub[[gvar]] <- factor(as.character(sub[[gvar]]), levels = levs)
-  
-  # counts per group
-  n1 <- sum(sub[[gvar]] == levs[1])
-  n2 <- sum(sub[[gvar]] == levs[2])
-  N <- n1 + n2
-  
-  if(N < 2) {
-    return(data.frame(
-      group1 = grp_pair[1],
-      group2 = grp_pair[2],
-      status = "SKIPPED: not enough observations",
-      W = NA, p_value = NA, n1 = n1, n2 = n2, N = N, r = NA,
-      stringsAsFactors = FALSE
-    ))
-  }
-  
-  # run Wilcoxon rank-sum (Mann-Whitney) - asymptotic (good for large N)
-  test <- wilcox.test(sub[[yvar]] ~ sub[[gvar]], exact = FALSE, correct = FALSE)
-  
-  pval <- test$p.value
-  Wstat <- as.numeric(test$statistic)
-  
-  # approximate effect size r = Z / sqrt(N)
-  # compute Z from p-value (two-sided). Determine sign from median difference
-  med_diff <- median(sub[[yvar]][sub[[gvar]] == levs[1]], na.rm = TRUE) -
-    median(sub[[yvar]][sub[[gvar]] == levs[2]], na.rm = TRUE)
-  # convert p to one-sided Z magnitude
-  Zmag <- qnorm(pval / 2, lower.tail = FALSE)
-  Z <- ifelse(med_diff < 0, -Zmag, Zmag)   # assign sign based on direction of medians
-  r <- Z / sqrt(N)
-  
-  data.frame(
-    group1 = levs[1],
-    group2 = levs[2],
-    status = "OK",
-    W = Wstat,
-    p_value = pval,
-    n1 = n1,
-    n2 = n2,
-    N = N,
-    r = r,
-    stringsAsFactors = FALSE
-  )
-}
-
-# run all comparisons and collect results
-results <- lapply(pairs, function(p) run_safe_wilcox(my_data, p, yvar = "red", gvar = "name"))
-results_df <- do.call(rbind, results)
-
-# adjust p-values (BH) for tests that ran
-valid_idx <- which(results_df$status == "OK")
-results_df$p_adj_BH <- NA
-if(length(valid_idx) > 0) {
-  results_df$p_adj_BH[valid_idx] <- p.adjust(results_df$p_value[valid_idx], method = "BH")
-}
-
-# show results
-print(results_df)
 
 
-#making nice stats graphs
-install.packages("ggpubr")
-
-library(ggplot2)
-library(ggpubr)
-
-# define the 5 comparisons (use your real group names)
-comparisons <- list(
-  c("U fathers", "I fathers"),
-  c("CI_C1dx", "UxU_c1dx"),
-  c("CI_XO", "UxU_XO"),
-  c("CI_w1118", "UxU_w1118"),
-  c("IxU _yw", "IxI_yw")
-)
-
-# build plot — note the + is at the END of the previous line
-library(ggplot2)
-library(ggpubr)
-
-ggplot(my_data, aes(x = factor(name, levels = unique(name)), y = red)) +
-  geom_boxplot() +
-  
-  # extend axis slightly beyond 1
-  scale_y_continuous(limits = c(0, 1.1), expand = c(0, 0)) +
-  
-  # add p-values above 1
-  stat_compare_means(
-    comparisons = comparisons,
-    method = "wilcox.test",
-    method.args = list(exact = FALSE),
-    p.adjust.method = "BH",
-    label = "p.format",
-    label.y = c(1.02, 1.04, 1.06, 1.08, 1.10)
-  ) +
-  
-  # allow drawing outside panel
-  coord_cartesian(clip = "off") +
-  
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.margin = margin(t = 20)  # extra top margin
-  )
