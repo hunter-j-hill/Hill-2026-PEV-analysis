@@ -6,7 +6,7 @@
 # Binomial GEE: for Table 2 egg-adult viability (see separate R script)
 # BH correction: applied within each figure
 #
-# Requires: R >= 4.0, tidyverse, mgcv
+# Requires: R >= 4.1, tidyverse, mgcv
 # 
 # October 1, 2026
 # =============================================================================
