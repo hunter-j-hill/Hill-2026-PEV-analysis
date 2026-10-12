@@ -75,7 +75,8 @@ run_beta_glmm <- function(dat, grp_col, val_col, cluster_col, grp1, grp2, label)
     mw_p = mw$p.value,
     glmm_coef = result$coef, glmm_se = result$se, glmm_p = result$p,
     re_sd = result$re_sd,
-    method = "beta_GLMM", status = result$status
+    method = if (is.na(result$p)) "MW" else "beta_GLMM",
+status = result$status
   )
 }
 
