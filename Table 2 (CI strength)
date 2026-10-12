@@ -2,6 +2,9 @@ rm(list = ls())
 
 library(geepack)
 
+# Keep all observations from the same date together
+df <- df[order(df$date), ]
+
 run_gee <- function(file, treatment_levels = c("CI", "UU"), corstr = "exchangeable") {
   df <- read.csv(file, stringsAsFactors = FALSE)
   
