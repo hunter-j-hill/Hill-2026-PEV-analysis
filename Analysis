@@ -278,8 +278,8 @@ fig4a <- bind_rows(
   run_beta_glmm(d4a, "name", "red", "Date",
     "I fathers", "U fathers", "4A: I fathers vs U fathers"),
   run_mw(d4a, "name", "red",
-    "UU", "U fathers", "4A: UU vs U fathers",
-    "cross-experiment: fathers Sep-Oct 2025, UU Jan 2026 vials"),
+    "CI", "II", "4A: CI vs II",
+    "cross-experiment: CI Jan 2026 vials, II Sep-Oct 2025 dates"),
   run_beta_glmm(combined_3, "group", "red", "cluster",
     "CI", "UU", "4A: CI vs UU (=3C/3D)"),
   run_mw(d4a, "name", "red",
@@ -320,10 +320,7 @@ fig4b <- bind_rows(
     "CI", "UU", "4B: CI vs UU"),
   run_mw(d4b, "name", "red",
     "CI", "II", "4B: CI vs II",
-    "date blocks confounded with treatment (CI spans Aug+Jan, II Aug-Sep only)"),
-  run_mw(d4b, "name", "red",
-    "II", "UU", "4B: II vs UU",
-    "cross-experiment: UU Jan 2026, II Aug-Sep 2025")
+    "date blocks confounded with treatment (CI spans Aug+Jan, II Aug-Sep only)")
 ) |>
   mutate(
     best_p = coalesce(glmm_p, mw_p),
