@@ -181,7 +181,7 @@ fig2d <- bind_rows(
   run_beta_glmm(d2d, "name", "red", "date",
     "CI_C1dx", "UxU_c1dx", "2D: C(1)DX CI vs UU"),
   run_mw(d2d, "name", "red",
-    "CI_XO", "UxU_XO", "2D: X/O CI vs UU", "n=11+6, too few for GLMM"),
+    "CI_XO", "UxU_XO", "2D: X/O CI vs UU", ""MW selected for X/O comparison; n=16 CI + 22 UU"),
   run_beta_glmm(d2d, "name", "red", "date",
     "CI_w1118", "UxU_w1118", "2D: w1118 CI vs UU")
 ) |>
