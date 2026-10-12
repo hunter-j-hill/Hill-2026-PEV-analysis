@@ -1,14 +1,16 @@
+#!/usr/bin/env Rscript
 # =============================================================================
 # Hill et al. PEV manuscript — Updated statistical analysis
 # 
 # Beta GLMM: mgcv::gam(family=betar()) with cluster random effects
 # Mann-Whitney: for cross-experiment comparisons / missing cluster data
 # Binomial GEE: for Table 2 egg-adult viability (see separate R script)
-# BH correction: applied within each figure
+# Kruskal-Wallis: omnibus tests for 1F, 2C, 2D, 4A, 4B (unadjusted)
+# BH correction: applied to planned pairwise tests within each figure
 #
 # Requires: R >= 4.1, tidyverse, mgcv
 # 
-# October 1, 2026
+# October 12, 2026
 # =============================================================================
 
 library(tidyverse)
@@ -76,7 +78,7 @@ run_beta_glmm <- function(dat, grp_col, val_col, cluster_col, grp1, grp2, label)
     glmm_coef = result$coef, glmm_se = result$se, glmm_p = result$p,
     re_sd = result$re_sd,
     method = if (is.na(result$p)) "MW" else "beta_GLMM",
-status = result$status
+    status = result$status
   )
 }
 
@@ -100,6 +102,27 @@ run_mw <- function(dat, grp_col, val_col, grp1, grp2, label, reason) {
   )
 }
 
+# Omnibus rank test across all groups in a figure.
+# Uses individual observations; does not model date/vial clustering.
+# Omnibus p-values are unadjusted and excluded from pairwise BH families.
+run_kw <- function(dat, grp_col, val_col, label) {
+  sub <- dat |>
+    transmute(group = .data[[grp_col]], value = .data[[val_col]]) |>
+    filter(!is.na(group), group != "", is.finite(value))
+  if (n_distinct(sub$group) < 2L) {
+    stop(paste(label, "requires at least two groups."))
+  }
+  kw <- kruskal.test(value ~ group, data = sub)
+  tibble(
+    label = label, grp1 = "All groups", grp2 = NA_character_,
+    n1 = nrow(sub), n2 = NA_integer_,
+    ncl1 = NA_integer_, ncl2 = NA_integer_,
+    method = "KW", status = "Omnibus test; unadjusted; no cluster adjustment",
+    statistic = unname(kw$statistic), df = unname(kw$parameter),
+    best_p = kw$p.value, bh_p = NA_real_, mw_p = NA_real_
+  )
+}
+
 format_p <- function(p) {
   case_when(
     is.na(p) ~ "—",
@@ -112,6 +135,10 @@ format_p <- function(p) {
 # =============================================================================
 # LOAD DATA, note I edited figure names by panel so I didn't get confused...
 # =============================================================================
+
+d2c <- read_csv("2C.csv", show_col_types = FALSE) |>
+  rename_with(str_trim) |>
+  mutate(across(where(is.character), str_trim))
 
 d1f <- read_csv("1F.csv", show_col_types = FALSE) |>
   rename_with(str_trim) |>
@@ -136,6 +163,44 @@ d4b <- read_csv("4B.csv", show_col_types = FALSE) |>
   rename_with(str_trim) |>
   mutate(across(where(is.character), str_trim))
 
+
+# =============================================================================
+# FIG 2C: eight-group Kruskal-Wallis and four planned Mann-Whitney tests
+# BH family: four planned two-sided comparisons (p1–p4).
+# These rank tests do not adjust for clustering.
+# =============================================================================
+expected_2c <- c("IA_females", "UB_female", "IA_males", "UB_males",
+                 "IAW_females", "UBW_females", "IAW_males", "UBW_males")
+if (!setequal(unique(d2c$name), expected_2c) ||
+    anyNA(d2c$name) || anyNA(d2c$red) ||
+    any(!is.finite(d2c$red)) || any(d2c$red < 0 | d2c$red > 1)) {
+  stop("Check 2C.csv: expected eight named groups and finite red values in [0,1].")
+}
+kw_2c <- kruskal.test(red ~ name, data = d2c)
+fig2c_kw <- tibble(
+  label = "2C: all eight groups", grp1 = "All groups", grp2 = NA_character_,
+  n1 = nrow(d2c), n2 = NA_integer_, ncl1 = NA_integer_, ncl2 = NA_integer_,
+  method = "KW", status = "Eight-group omnibus test; unadjusted",
+  statistic = unname(kw_2c$statistic), df = unname(kw_2c$parameter),
+  best_p = kw_2c$p.value, bh_p = NA_real_, mw_p = NA_real_
+)
+pairs_2c <- list(
+  c("IA_females", "UB_female"),       # p1: IAF versus UBF
+  c("IA_males", "UB_males"),         # p2: IAM versus UBM
+  c("IAW_females", "UBW_females"),   # p3: IAW females versus UBW females
+  c("IAW_males", "UBW_males")        # p4: IAW males versus UBW males
+)
+fig2c <- bind_rows(lapply(seq_along(pairs_2c), function(i) {
+  pair <- pairs_2c[[i]]
+  run_mw(d2c, "name", "red", pair[1], pair[2],
+         paste0("2C p", i, ": ", pair[1], " vs ", pair[2]),
+         "Two-sided MW; BH across four planned comparisons")
+})) |>
+  mutate(best_p = mw_p, bh_p = p.adjust(mw_p, method = "BH"))
+cat("\nFIG 2C: Kruskal-Wallis omnibus test\n")
+print(kw_2c)
+cat("\nFIG 2C: p1–p4, BH-adjusted across four planned comparisons\n")
+print(fig2c |> select(label, n1, n2, best_p, bh_p), n = Inf, width = Inf)
 
 # =============================================================================
 # FIG 3C/3D: yw UU vs CI — vial as random effect
@@ -176,6 +241,8 @@ cat("\n================================================================\n")
 cat("FIG 2D\n")
 cat("================================================================\n")
 
+fig2d_kw <- run_kw(d2d, "name", "red", "2D: all groups")
+
 fig2d <- bind_rows(
   run_beta_glmm(d2d, "name", "red", "date",
     "I fathers", "U fathers", "2D: I fathers vs U fathers"),
@@ -204,6 +271,8 @@ fig2d |>
 cat("\n================================================================\n")
 cat("FIG 4A\n")
 cat("================================================================\n")
+
+fig4a_kw <- run_kw(d4a, "name", "red", "4A: all groups")
 
 fig4a <- bind_rows(
   run_beta_glmm(d4a, "name", "red", "Date",
@@ -238,6 +307,8 @@ cat("\n================================================================\n")
 cat("FIG 4B\n")
 cat("================================================================\n")
 
+fig4b_kw <- run_kw(d4b, "name", "red", "4B: all groups")
+
 fig4b <- bind_rows(
   run_mw(d4b, "name", "red",
     "I fathers", "U fathers", "4B: I fathers vs U fathers",
@@ -271,6 +342,8 @@ fig4b |>
 cat("\n================================================================\n")
 cat("FIG 1F\n")
 cat("================================================================\n")
+
+fig1f_kw <- run_kw(d1f, "name", "red", "1F: all groups")
 
 fig1f <- bind_rows(
   run_mw(d1f, "name", "red",
@@ -310,9 +383,16 @@ fig3_out <- fig3 |>
   mutate(best_p = coalesce(glmm_p, mw_p), bh_p = NA_real_)
 
 all_results <- bind_rows(
+  fig2c_kw |> mutate(fig = "2C"),
+  fig2c |> mutate(fig = "2C"),
+  fig1f_kw |> mutate(fig = "1F"),
+  fig1f |> mutate(fig = "1F"),
   fig3_out |> mutate(fig = "3C/3D"),
+  fig2d_kw |> mutate(fig = "2D"),
   fig2d |> mutate(fig = "2D"),
+  fig4a_kw |> mutate(fig = "4A"),
   fig4a |> mutate(fig = "4A"),
+  fig4b_kw |> mutate(fig = "4B"),
   fig4b |> mutate(fig = "4B")
 )
 
@@ -323,7 +403,7 @@ cat(str_dup("-", 110), "\n")
 all_results |>
   rowwise() |>
   mutate(
-    n_str = str_c(n1, "+", n2),
+    n_str = if_else(is.na(n2), as.character(n1), str_c(n1, "+", n2)),
     cl_str = if_else(is.na(ncl1), "—", str_c(ncl1, "+", ncl2)),
     raw_str = format_p(best_p),
     bh_str = if_else(is.na(bh_p), "—", format_p(bh_p)),
@@ -334,3 +414,10 @@ all_results |>
   pwalk(~ cat(sprintf("%-8s %-35s %-10s %-10s %-10s %-12s %-12s %-12s\n",
     ..1, ..2, ..3, ..4, ..5, ..6, ..7, ..8)))
 
+# Omnibus statistics for reporting (also included as KW rows above).
+cat("\nKRUSKAL-WALLIS OMNIBUS RESULTS (unadjusted; no cluster adjustment)\n")
+all_results |>
+  filter(method == "KW") |>
+  transmute(Fig = fig, n = n1, chi_squared = statistic,
+            df, p = format_p(best_p)) |>
+  print(n = Inf, width = Inf)
