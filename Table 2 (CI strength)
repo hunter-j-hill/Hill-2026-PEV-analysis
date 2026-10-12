@@ -2,9 +2,6 @@ rm(list = ls())
 
 library(geepack)
 
-# Keep all observations from the same date together
-df <- df[order(df$date), ]
-
 run_gee <- function(file, treatment_levels = c("CI", "UU"), corstr = "exchangeable") {
   df <- read.csv(file, stringsAsFactors = FALSE)
   
@@ -16,7 +13,10 @@ run_gee <- function(file, treatment_levels = c("CI", "UU"), corstr = "exchangeab
   
   # remove blank / incomplete rows
   df <- df[!is.na(df$date) & !is.na(df$treatment) & !is.na(df$eggs) & !is.na(df$adults), ]
-  
+
+# Keep all observations from the same date together
+df <- df[order(df$date), ]
+
   fit <- geeglm(
     cbind(adults, eggs - adults) ~ treatment,
     id = date,
