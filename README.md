@@ -9,11 +9,11 @@ R code and CSV datasets for “Wolbachia-induced cytoplasmic incompatibility pro
 
 | Script | Purpose |
 | --- | --- |
-| `Analysis.R` | Beta mixed models, selected Mann–Whitney comparisons, within-figure BH correction, and Pearson correlations on vial means. |
-| `plots_all_figures.R` | Generate each data-driven figure panel separately and save 300 dpi PNGs. Replaces the earlier manual `plots.R` / `Figure Plots` workflow. |
-| `Table 2 exchangable.R` | Binomial GEE analysis of egg-to-adult viability, clustered by experimental date. |
+| `Analysis` | Beta mixed models, selected Mann–Whitney comparisons, within-figure BH correction, and Pearson correlations on vial means. |
+| `Figure Plots` | Generate each data-driven figure panel separately and save 300 dpi PNGs. Replaces the earlier manual `plots.R` / `Figure Plots` workflow. |
+| `Table 2 (CI strength)` | Binomial GEE analysis of egg-to-adult viability, clustered by experimental date. |
 
-The commands below assume these exact script filenames in the repository root and CSVs in `data/`. If the downloaded repository still uses `Analysis` and `Table 2 (CI strength)`, rename them to `Analysis.R` and `Table 2 exchangable.R`, respectively, before using these commands. Save the new plotting script as `plots_all_figures.R`.
+The commands below use the exact filenames in the supplied repository: `Analysis`, `Figure Plots`, and `Table 2 (CI strength)`. These files contain R code despite having no `.R` extension. Keep the CSVs in `data/` and start from the repository root.
 
 The scripts can be run independently. Run the Table 2 script in a separate R session because its initial `rm(list = ls())` clears the current workspace.
 
@@ -61,7 +61,7 @@ In the checked 3C and 4A archives, the CI folder `1-16-16` corresponds to CSV da
 Set the R working directory to the repository root, then run:
 
 ```r
-source("plots_all_figures.R")
+source("Figure Plots")
 ```
 
 The script looks for input CSVs in `data/`, falling back to the working directory if no `data/` folder exists. You can set `data_dir` explicitly near the top of the script.
@@ -96,7 +96,7 @@ The analysis script reads bare CSV filenames from the working directory. From th
 
 ```r
 setwd("data")
-source("../Analysis.R")
+source("../Analysis")
 write.csv(all_results, "../analysis_results.csv", row.names = FALSE)
 write.csv(fig1f, "../figure_1F_results.csv", row.names = FALSE)
 writeLines(capture.output(sessionInfo()), "../analysis_session_info.txt")
@@ -119,7 +119,7 @@ The analysis creates `fig1f`, `fig2d`, `fig3`, `fig4a`, `fig4b`, and `all_result
 
 Each input must contain nonnegative integer counts, positive egg totals, and `adults <= eggs`. Treatments are CI and UU. Check dates and treatment labels before fitting; unknown treatment labels become missing in the reviewed script, and blank date strings need explicit checking.
 
-The corrected `run_gee()` must include this line after data cleaning and immediately before `geeglm()`:
+The Table 2 script sorts observations inside `run_gee()`, after data cleaning and immediately before `fit <- geeglm(...)`:
 
 ```r
 df <- df[order(df$date), ]
@@ -131,7 +131,7 @@ In a separate R session, starting at the repository root:
 
 ```r
 setwd("data")
-source("../Table 2 exchangable.R")
+source("../Table 2 (CI strength)")
 print(summary_table)
 write.csv(summary_table, "../table_2_results.csv", row.names = FALSE)
 writeLines(capture.output(sessionInfo()), "../table_2_session_info.txt")
@@ -144,6 +144,6 @@ The model uses a binomial response `cbind(adults, eggs - adults)`, date clusters
 
 The updated plotting script fixes dataset-specific column handling and aligns correlation plots with the vial-mean analyses. It saves PNGs only and replaces the previous manual plotting workflow.
 
-Before release, ensure that the analysis script's opening separator is commented with `#`, that script filenames match this README, and that Table 2 includes the sorting correction. Check the original experimental records before changing questionable dates. In the reviewed 2D data, X/O group sizes are 16 CI and 22 UU; an older script comment giving 11 and 6 should be updated.
+The analysis script's opening separator is now correctly commented. The Table 2 sorting correction is also present in the verified script, inside `run_gee()` before model fitting. The plotting script's introductory comment still mentions its earlier filename; use `source("Figure Plots")` as shown here. Check the original experimental records before changing questionable dates. In the reviewed 2D data, X/O group sizes are 16 CI and 22 UU; an older script comment giving 11 and 6 should be updated.
 
 Record the software versions used for final results and include the selected code license and manuscript DOI when available. The plotting script does not modify the source CSVs. Filename matching and documentation review do not validate image contents, model assumptions, or exact agreement with manuscript results.
