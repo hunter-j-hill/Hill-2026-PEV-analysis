@@ -1,53 +1,171 @@
-#install the whole tidyverse:
-install.packages("tidyverse")
+# Hill et al. 2026: individual data-driven figure panels
+# Run from the repository root (containing data/) in RStudio:
+# source("plots_all_figures.R")
+# View one plot: print(plots$Figure_1F)
+# Requires ggplot2. Install once if needed: install.packages("ggplot2")
+# Artwork, microscopy panels, and statistical significance brackets are not
+# recreated here. Table 2 plots are descriptive companion plots, not GEE results.
 
-# Alternatively, install just ggplot2:
-install.packages("ggplot2")
-
-library(tidyverse)
-
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  stop('Install ggplot2 first: install.packages("ggplot2")')
+}
 library(ggplot2)
 
-# Load a CSV file named "my_data.csv" from the current working directory
-my_data <- read.csv("1F.csv", header = TRUE, sep = ",")
+# USER SETTINGS ---------------------------------------------------------------
+data_dir <- if (dir.exists("data")) "data" else "."
+output_dir <- "figure_plots"
+save_plots <- TRUE                  # 300 dpi PNG for each plot
+show_plots <- interactive()          # RStudio plot-history navigation
+jitter_seed <- 2026
 
-#sort by vial ID (date) used for Fig S3A and S3B
-ggplot(my_data, aes(x = factor(vial, levels = sort(unique(vial))), y = red)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.15, alpha = 0.3, size = 0.8) +
-  coord_cartesian(ylim = c(0, 1)) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.25))
+read_input <- function(filename, required) {
+  path <- file.path(data_dir, filename)
+  if (!file.exists(path)) stop("Missing input: ", path)
+  d <- read.csv(path, stringsAsFactors = FALSE, check.names = FALSE)
+  names(d) <- trimws(names(d))
+  absent <- setdiff(required, names(d))
+  if (length(absent)) stop(filename, ": missing columns: ", paste(absent, collapse=", "))
+  for (col in names(d)) if (is.character(d[[col]])) d[[col]] <- trimws(d[[col]])
+  for (col in required) {
+    if (any(is.na(d[[col]]) | trimws(as.character(d[[col]])) == ""))
+      stop(filename, ": missing values in ", col, "; review before plotting.")
+  }
+  for (col in intersect(c("red", "EAV", "wl", "eggs", "adults"), required)) {
+    if (!is.numeric(d[[col]]) || any(!is.finite(d[[col]])))
+      stop(filename, ": ", col, " must contain finite numeric values.")
+  }
+  for (col in intersect(c("red", "EAV"), required))
+    if (any(d[[col]] < 0 | d[[col]] > 1)) stop(filename, ": ", col, " outside 0–1.")
+  d
+}
 
-#jittered box plot based on order in spreadsheet, 
-#outliershape=NA prevents outliers from being plotted twice
-#used for Figs 1F, 2C, 2D, 4A, 4B, S6E
-ggplot(my_data, aes(x = factor(name, levels = unique(name)), y = red)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.15, alpha = 0.3, size = 0.8)
+figure_theme <- function() {
+  theme_gray(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.title = element_text(face = "bold"))
+}
 
-#jittered CI strength 
-#used for Figs 3C and 3D
-ggplot(my_data, aes(x = reorder(factor(name), EAV), y = red)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.15, alpha = 0.3, size = 0.8)
+box_plot <- function(d, group, value, title, xlab, ylab, levels = NULL,
+                     proportion = TRUE) {
+  if (is.null(levels)) levels <- unique(d[[group]])
+  d$.plot_group <- factor(d[[group]], levels = levels)
+  if (anyNA(d$.plot_group)) stop(title, ": group ordering omitted some values.")
+  p <- ggplot(d, aes(x = .plot_group, y = .data[[value]])) +
+    geom_boxplot(outlier.shape = NA, width = 0.65) +
+    geom_point(position = position_jitter(width = 0.15, height = 0,
+                                         seed = jitter_seed),
+               alpha = 0.3, size = 0.8) +
+    labs(title = title, x = xlab, y = ylab) + figure_theme()
+  if (proportion) p <- p + coord_cartesian(ylim = c(0, 1)) +
+    scale_y_continuous(breaks = seq(0, 1, 0.25))
+  p
+}
 
-#same as above but Y axis goes to 1
-ggplot(my_data, aes(x = reorder(factor(name), EAV), y = red)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.15, alpha = 0.3, size = 0.8) +
-  coord_cartesian(ylim = c(0, 1)) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.25))
+# Read each figure's own CSV. Fail explicitly rather than silently omit rows.
+d1f <- read_input("1F.csv", c("name", "red"))
+d2c <- read_input("2C.csv", c("name", "red"))
+d2d <- read_input("2D.csv", c("name", "red"))
+d3c <- read_input("3C.csv", c("vial", "red", "EAV"))
+d3d <- read_input("3D.csv", c("name", "red", "EAV"))
+d4a <- read_input("4A.csv", c("name", "red"))
+d4b <- read_input("4B.csv", c("name", "red"))
+ds4 <- read_input("s4.csv", c("name", "red"))
+dpoly <- read_input("polytenes.csv", c("name", "wl"))
 
-#Pearsons R, used for figs S3C and S3D
-ggplot(my_data, aes(x = EAV, y = red)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = TRUE) +
-  labs(title = "Pearson Correlation",
-       subtitle = paste("r =", 
-                        round(cor(my_data$EAV, my_data$red, 
-                                  use = "complete.obs"), 2)),
-       x = "EAV",
-       y = "Red")
+# Main group plots: preserve group order of first appearance in each CSV.
+plots <- list()
+plots$Figure_1F <- box_plot(d1f, "name", "red", "Figure 1F", "Group", "Red pigmentation (proportion)")
+plots$Figure_2C <- box_plot(d2c, "name", "red", "Figure 2C", "Group", "Red pigmentation (proportion)")
+plots$Figure_2D <- box_plot(d2d, "name", "red", "Figure 2D", "Group", "Red pigmentation (proportion)")
+plots$Figure_4A <- box_plot(d4a, "name", "red", "Figure 4A", "Group", "Red pigmentation (proportion)")
+plots$Figure_4B <- box_plot(d4b, "name", "red", "Figure 4B", "Group", "Red pigmentation (proportion)")
+plots$Figure_S4B <- box_plot(ds4, "name", "red", "Figure S4B", "Group", "Red pigmentation (proportion)")
+plots$Figure_S5E <- box_plot(dpoly, "name", "wl", "Figure S5E", "Group",
+                            "Chromosome width / length", proportion = FALSE)
 
+# Standardize vial IDs for plotting without changing original CSVs.
+d3c$vial_id <- d3c$vial
+d3d$vial_id <- d3d$name
+vial_means <- function(d) {
+  # One point per vial, matching the aggregation in the analysis script.
+  aggregate(d[c("red", "EAV")], list(vial_id = d$vial_id), mean)
+}
+ci_means <- vial_means(d3c)
+uu_means <- vial_means(d3d)
+eav_order <- function(d) d$vial_id[order(d$EAV, d$vial_id)]
 
+# Each vial remains separate even when different vials have identical EAV.
+plots$Figure_3C <- box_plot(d3c, "vial_id", "red", "Figure 3C: CI",
+  "Vial (ordered by mean egg-to-adult viability)", "Red pigmentation (proportion)",
+  levels = eav_order(ci_means))
+plots$Figure_3D <- box_plot(d3d, "vial_id", "red", "Figure 3D: UU",
+  "Vial (ordered by mean egg-to-adult viability)", "Red pigmentation (proportion)",
+  levels = eav_order(uu_means))
 
+# Numeric month/day ordering for supplied vial IDs such as 1-09-a and 1-20-b.
+# These IDs lack years; use only within the supplied single-year datasets.
+vial_order <- function(ids) {
+  ids <- unique(ids)
+  parts <- strsplit(ids, "-", fixed = TRUE)
+  if (any(lengths(parts) < 3)) stop("Unexpected vial ID; expected month-day-vial.")
+  month <- suppressWarnings(as.integer(vapply(parts, `[`, "", 1)))
+  day <- suppressWarnings(as.integer(vapply(parts, `[`, "", 2)))
+  if (anyNA(month) || anyNA(day)) stop("Cannot parse vial dates.")
+  ids[order(month, day, ids)]
+}
+plots$Figure_S3A <- box_plot(d3c, "vial_id", "red", "Figure S3A: CI",
+  "Vial (ordered by date and ID)", "Red pigmentation (proportion)",
+  levels = vial_order(d3c$vial_id))
+plots$Figure_S3B <- box_plot(d3d, "vial_id", "red", "Figure S3B: UU",
+  "Vial (ordered by date and ID)", "Red pigmentation (proportion)",
+  levels = vial_order(d3d$vial_id))
+
+correlation_plot <- function(d, title) {
+  test <- cor.test(d$EAV, d$red, method = "pearson")
+  ggplot(d, aes(x = EAV, y = red)) +
+    geom_point(size = 1.8) + geom_smooth(method = "lm", formula = y ~ x, se = TRUE) +
+    labs(title = title,
+         subtitle = sprintf("Vial means: n = %d; Pearson r = %.3f; p = %s",
+                            nrow(d), unname(test$estimate),
+                            format.pval(test$p.value, digits = 3)),
+         x = "Mean egg-to-adult viability", y = "Mean red pigmentation") +
+    coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) + figure_theme()
+}
+plots$Figure_S3C <- correlation_plot(ci_means, "Figure S3C: CI")
+plots$Figure_S3D <- correlation_plot(uu_means, "Figure S3D: UU")
+
+# Descriptive companion plots for the three Table 2 count datasets.
+# Points are individual CSV rows: adults/eggs, not pooled or GEE estimates.
+for (dataset in c("yw", "w1118", "UBW")) {
+  d <- read_input(paste0(dataset, ".csv"), c("date", "treatment", "eggs", "adults"))
+  if (any(d$eggs <= 0 | d$adults < 0 | d$adults > d$eggs |
+          d$eggs != floor(d$eggs) | d$adults != floor(d$adults)))
+    stop(dataset, ": invalid egg/adult counts.")
+  if (!setequal(unique(d$treatment), c("CI", "UU")))
+    stop(dataset, ": expected CI and UU treatments.")
+  d$survival <- d$adults / d$eggs
+  plots[[paste0("Table2_descriptive_", dataset)]] <- box_plot(d, "treatment",
+    "survival", paste0("Table 2 companion: ", dataset), "Treatment",
+    "Egg-to-adult viability (adults / eggs)", levels = c("CI", "UU"))
+}
+
+# Save every panel separately; access or customize any plot through plots$name.
+# Wide vial plots retain one x-axis position for every vial.
+if (save_plots) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  for (nm in names(plots)) {
+    wide <- nm %in% c("Figure_3C", "Figure_3D", "Figure_S3A", "Figure_S3B")
+    n_vials <- if (nm %in% c("Figure_3C", "Figure_S3A")) nrow(ci_means) else nrow(uu_means)
+    width <- if (wide) max(10, n_vials * 0.22) else 8
+    for (ext in "png") {
+      ggsave(file.path(output_dir, paste0(nm, ".", ext)), plot = plots[[nm]],
+             width = width, height = 5.5, units = "in", dpi = 300,
+             bg = "white", limitsize = FALSE)
+    }
+  }
+  writeLines(capture.output(sessionInfo()), file.path(output_dir, "session_info.txt"))
+  message("Saved ", length(plots), " individual plots as PNG in: ", output_dir)
+}
+if (show_plots) for (p in plots) print(p)
+# Example: print(plots$Figure_1F)
+# Example: print(plots$Figure_S3C)
