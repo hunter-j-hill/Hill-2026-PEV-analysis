@@ -1,6 +1,6 @@
 # Hill et al. 2026: individual data-driven figure panels
 # Run from the repository root (containing data/) in RStudio:
-# source("plots_all_figures.R")
+# source("Figure Plots.R")
 # View one plot: print(plots$Figure_1F)
 # Requires ggplot2. Install once if needed: install.packages("ggplot2")
 # Artwork, microscopy panels, and statistical significance brackets are not
