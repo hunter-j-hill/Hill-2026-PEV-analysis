@@ -1,6 +1,6 @@
 # Hill-2026-PEV-analysis
 
-R code and CSV datasets for “Wolbachia-induced cytoplasmic incompatibility produces heritable chromatin modifications that suppress position-effect variegation”.
+R code, CSV datasets, and an Excel input workbook for “Wolbachia-induced cytoplasmic incompatibility produces heritable chromatin modifications that suppress position-effect variegation”.
 
 - GitHub repository: https://github.com/hunter-j-hill/Hill-2026-PEV-analysis
 - Figures and associated materials on Figshare: https://figshare.com/articles/figure/Figures_for_Hill_et_al_2026/34059486
@@ -12,8 +12,9 @@ R code and CSV datasets for “Wolbachia-induced cytoplasmic incompatibility pro
 | `Analysis` | Beta mixed models, selected Mann–Whitney comparisons, Kruskal–Wallis omnibus tests, within-figure pairwise BH correction, and Pearson correlations on vial means. |
 | `Figure Plots` | Generate each data-driven figure panel separately and save 300 dpi PNGs. Replaces the earlier manual plotting workflow. |
 | `Table 2 (CI strength)` | Binomial GEE analysis of egg-to-adult viability, clustered by experimental date. |
+| `Supp_Table_2_downsampling` | Supplementary Table 2: downsampling for unequal sample sizes and a separate Figure 4B comparison restricted to the 2026 experimental round. |
 
-The commands below use the exact filenames in the supplied repository: `Analysis`, `Figure Plots`, and `Table 2 (CI strength)`. These files contain R code despite having no `.R` extension. Keep the CSVs in `data/` and start from the repository root.
+The commands below use the exact filenames in the supplied repository: `Analysis`, `Figure Plots`, and `Table 2 (CI strength)`, plus the new `Supp_Table_2_downsampling` script. These files contain R code despite having no `.R` extension. Keep the CSVs in `data/` and start from the repository root.
 
 The scripts can be run independently. Run the Table 2 script in a separate R session because its initial `rm(list = ls())` clears the current workspace.
 
@@ -22,10 +23,10 @@ The scripts can be run independently. Run the Table 2 script in a separate R ses
 Use R 4.1 or later. RStudio is optional. Install dependencies once:
 
 ```r
-install.packages(c("tidyverse", "mgcv", "geepack"))
+install.packages(c("tidyverse", "mgcv", "geepack", "readxl"))
 ```
 
-The tidyverse includes ggplot2; the plotting script only requires ggplot2. It does not install packages automatically.
+The tidyverse includes ggplot2; the plotting script only requires ggplot2. It does not install packages automatically. The downsampling script requires `readxl`.
 
 ## CSV inputs
 
@@ -167,7 +168,54 @@ setwd("..")
 
 The model uses a binomial response `cbind(adults, eggs - adults)`, date clusters, and an exchangeable working correlation. With factor levels `c("CI", "UU")`, the odds ratio compares UU with CI. Outputs include log-odds coefficients, standard errors, odds ratios, approximate 95% confidence intervals, and unadjusted p-values. Odds ratios are not ratios of survival percentages.
 
+## Run Supplementary Table 2: downsampling
+
+Run the script from an interactive R session, starting at the repository root:
+
+```r
+source("Supp_Table_2_downsampling")
+```
+
+When the file chooser opens, select `unbalanced_sample_sizes.xlsx`. If the script is saved with a `.R` extension, use `source("Supp_Table_2_downsampling.R")` instead. For a noninteractive run, replace `file <- file.choose()` in the script with the workbook path.
+
+### Excel input
+
+The workbook must contain the following worksheets and group labels exactly as shown. Each sheet has no header row: column 1 contains the group label, column 2 contains the red fraction of eye surface area (0–1), and column 3 contains the experimental date or vial ID. The `4B Control v CI` sheet requires Excel-readable dates in column 3 for the round-specific comparison.
+
+| Worksheet | Smaller group | n | Larger group | n |
+| --- | --- | --- | --- | --- |
+| `4a-control v rescue` | `II` | 174 | `UU` | 534 |
+| `4B Control v CI` | `UU` | 83 | `CI` | 239 |
+| `4B fathers` | `U fathers` | 25 | `I fathers` | 119 |
+| `1F-C(1)DX X-Y` | `CI XY` | 56 | `U XY` | 117 |
+| `2D X-O males` | `CI_XO` | 16 | `UxU_XO` | 22 |
+
+Worksheet names are workbook identifiers and are preserved literally. The script stops if the selected groups do not match these expected sample sizes. For downsampling, columns are initially read as text and red fractions are converted to numeric; missing or nonnumeric red values cause the script to stop.
+
+### Procedure
+
+For each of the five comparisons, the script retains every observation in the smaller group and randomly samples the larger group without replacement to the same sample size. It repeats this procedure 1,000 times with `set.seed(2026)`. Each iteration uses a two-sided Mann–Whitney test with a normal approximation and continuity correction (`wilcox.test(..., exact = FALSE, correct = TRUE)`). It also calculates the full-data p-value and the median p-value across iterations. These p-values are unadjusted.
+
+A separate Figure 4B Control-versus-CI test uses observations with dates in 2026. The script identifies these by calendar year; the intended January–February 2026 round therefore assumes that all 2026 observations on this sheet belong to that round. This comparison uses the same Mann–Whitney settings and is not downsampled. Unlike the downsampling import, this section reads the red column directly as numeric, so those cells must be stored as numeric Excel values.
+
+### Outputs and interpretation
+
+The script prints the supplementary table and saves two CSVs beside the selected workbook. Rerunning replaces files with the same names.
+
+| Output | Contents |
+| --- | --- |
+| `downsampling_results.csv` | Comparison labels, group labels, original sample sizes, original group medians, percentage of iterations with p < 0.05 (`pct_sig`), and the separate 2026-round p-value (`p_2026_round`). |
+| `downsampling_results_full.csv` | Comparison and group information, full-data p-values (`p_full`), `pct_sig`, and median iteration p-values (`median_p`). For the 2026-round row, `p_full` is the p-value for that restricted comparison. |
+
+`pct_sig` and `median_p` are `NA` for the 2026-round row because it is not downsampled. `p_2026_round` is `NA` for the five downsampling rows. Reported sample sizes and medians describe the original groups used for each row, not individual subsamples.
+
+`pct_sig` describes how often p < 0.05 is retained after balancing sample sizes in these observed data. It is a sensitivity summary, not an adjusted p-value or the probability that the biological effect is real. Downsampling operates on individual observations and does not account for date/vial clustering.
+
+To record the software versions used, run `sessionInfo()` after the analysis and save its output with the final results.
+
 ## Release notes and reproducibility
+
+The Supplementary Table 2 script adds reproducible downsampling summaries for five unequal-size comparisons and a separate 2026-round Figure 4B test.
 
 The updated plotting script fixes dataset-specific column handling and aligns correlation plots with the vial-mean analyses. It saves PNGs only and replaces the previous manual plotting workflow.
 
