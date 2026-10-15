@@ -8,9 +8,9 @@
 # Kruskal-Wallis: omnibus tests for 1F, 2C, 2D, 4A, 4B (unadjusted)
 # BH correction: applied to planned pairwise tests within each figure
 #
-# Requires: R >= 4.1, tidyverse, mgcv
+# Requires: R >= 4.4, tidyverse, mgcv
 # 
-# October 12, 2026
+# October 14, 2026
 # =============================================================================
 
 library(tidyverse)
@@ -62,7 +62,14 @@ run_beta_glmm <- function(dat, grp_col, val_col, cluster_col, grp1, grp2, label)
     coef <- s$p.table["treatment1", "Estimate"]
     se <- s$p.table["treatment1", "Std. Error"]
     p <- s$p.table["treatment1", "Pr(>|z|)"]
-    re_sd <- gam.vcomp(m)[1, "std.dev"]
+    vc <- gam.vcomp(m)
+    if (is.list(vc)) vc <- vc$vc
+    
+    re_sd <- if (is.matrix(vc)) {
+      unname(vc["s(cluster)", "std.dev"])
+    } else {
+      unname(vc["s(cluster)"])
+    }
     list(coef = coef, se = se, p = p, re_sd = re_sd, status = "OK")
   }, error = function(e) {
     list(coef = NA_real_, se = NA_real_, p = NA_real_, re_sd = NA_real_,
