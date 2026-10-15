@@ -221,6 +221,6 @@ The updated plotting script fixes dataset-specific column handling and aligns co
 
 The analysis now includes Figure 1F and the four Figure 2C comparisons in the final table, plus omnibus Kruskal–Wallis results for 1F, 2C, 2D, 4A, and 4B.
 
-The documented analysis workflow uses R 4.1 or later, sorts Table 2 observations by date before fitting, and labels the selected p-value source as `beta_GLMM` or `MW`. The Figure 2D X/O comparison contains 16 CI and 22 UU observations in the supplied data. Check original experimental records before changing any date values.
+The documented analysis workflow uses R 4.4 or later, sorts Table 2 observations by date before fitting, and labels the selected p-value source as `beta_GLMM` or `MW`. The Figure 2D X/O comparison contains 16 CI and 22 UU observations in the supplied data. Check original experimental records before changing any date values.
 
 Record the software versions used for final results and include the selected code license and manuscript DOI when available. The plotting script does not modify the source CSVs. Filename matching and documentation review do not validate image contents, model assumptions, or exact agreement with manuscript results.
