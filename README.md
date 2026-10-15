@@ -20,7 +20,7 @@ The scripts can be run independently. Run the Table 2 script in a separate R ses
 
 ## Requirements
 
-Use R 4.1 or later. RStudio is optional. Install dependencies once:
+Use R 4.4 or later. RStudio is optional. Install dependencies once:
 
 ```r
 install.packages(c("tidyverse", "mgcv", "geepack", "readxl"))
