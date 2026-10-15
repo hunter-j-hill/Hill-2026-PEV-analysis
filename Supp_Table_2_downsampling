@@ -1,0 +1,98 @@
+# Downsampling analysis for unequal sample sizes
+# Input: unbalanced_sample_sizes.xlsx (one sheet per comparison)
+#   column 1 = group, column 2 = red fraction of eye surface area,
+#   column 3 = date or vial ID
+
+library(readxl)
+
+file <- file.choose()
+out_file <- file.path(dirname(file), "downsampling_results.csv")
+
+set.seed(2026)
+n_iter <- 1000
+
+# Read group and red fraction from a sheet.
+# Columns are read as text first because some small values are stored as text
+# in the spreadsheet; reading them as numeric would convert them to NA.
+read_sheet <- function(sheet) {
+  d <- read_excel(file, sheet = sheet, col_names = FALSE, col_types = "text")
+  d <- data.frame(group = d[[1]], red = as.numeric(d[[2]]))
+  if (any(is.na(d$red))) stop(paste("Missing or non-numeric values in", sheet))
+  d
+}
+
+# Two-sided Mann-Whitney test (normal approximation with continuity correction)
+mw_p <- function(x, y) {
+  wilcox.test(x, y, exact = FALSE, correct = TRUE)$p.value
+}
+
+# Test the full data, then repeatedly subsample the larger group
+# (without replacement) to the size of the smaller group and retest
+downsample <- function(small, large, n_iter) {
+  p <- replicate(n_iter, mw_p(small, sample(large, length(small))))
+  c(p_full = mw_p(small, large),
+    pct_sig = 100 * mean(p < 0.05),
+    median_p = median(p))
+}
+
+# Comparisons: sheet name, smaller group, larger group, expected sample sizes
+comparisons <- list(
+  list(sheet = "4a-control v rescue", small = "II",        large = "UU",        n = c(174, 534)),
+  list(sheet = "4B Control v CI",     small = "UU",        large = "CI",        n = c(83, 239)),
+  list(sheet = "4B fathers",          small = "U fathers", large = "I fathers", n = c(25, 119)),
+  list(sheet = "1F-C(1)DX X-Y",       small = "CI XY",     large = "U XY",      n = c(56, 117)),
+  list(sheet = "2D X-O males",        small = "CI_XO",     large = "UxU_XO",    n = c(16, 22))
+)
+
+results <- data.frame()
+
+for (cmp in comparisons) {
+  d <- read_sheet(cmp$sheet)
+  x <- d$red[d$group == cmp$small]
+  y <- d$red[d$group == cmp$large]
+
+  # Check sample sizes match the figures
+  if (length(x) != cmp$n[1] || length(y) != cmp$n[2]) {
+    stop(paste("Unexpected sample size in", cmp$sheet))
+  }
+
+  r <- downsample(x, y, n_iter)
+  results <- rbind(results, data.frame(
+    comparison = cmp$sheet,
+    group_small = cmp$small, n_small = length(x), median_small = median(x),
+    group_large = cmp$large, n_large = length(y), median_large = median(y),
+    p_full = r["p_full"], pct_sig = r["pct_sig"], median_p = r["median_p"],
+    row.names = NULL
+  ))
+}
+
+# Fig 4B Control vs CI restricted to the January-February 2026 round,
+# the only round containing both Control and CI crosses
+d4b <- read_excel(file, sheet = "4B Control v CI", col_names = FALSE,
+                  col_types = c("text", "numeric", "date"))
+d4b <- data.frame(group = d4b[[1]], red = d4b[[2]], date = d4b[[3]])
+d4b$year <- format(d4b$date, "%Y")
+r26 <- d4b[d4b$year == "2026", ]
+x <- r26$red[r26$group == "UU"]
+y <- r26$red[r26$group == "CI"]
+
+results <- rbind(results, data.frame(
+  comparison = "4B Control v CI (2026 round only)",
+  group_small = "CI", n_small = length(y), median_small = median(y),
+  group_large = "UU", n_large = length(x), median_large = median(x),
+  p_full = mw_p(x, y), pct_sig = NA, median_p = NA,
+  row.names = NULL
+))
+
+# Supplementary table: percent of downsampling iterations with p < 0.05,
+# and the p-value for the matched 2026-round comparison
+supp <- results[, c("comparison", "group_small", "n_small", "median_small",
+                    "group_large", "n_large", "median_large", "pct_sig")]
+supp$p_2026_round <- ifelse(results$comparison == "4B Control v CI (2026 round only)",
+                            results$p_full, NA)
+
+print(supp, digits = 3)
+write.csv(supp, out_file, row.names = FALSE)
+
+# Full results, including full-data and median p-values, kept for records
+write.csv(results, sub(".csv", "_full.csv", out_file), row.names = FALSE)
